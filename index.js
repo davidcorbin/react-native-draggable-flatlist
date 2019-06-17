@@ -85,7 +85,14 @@ class SortableFlatList extends Component {
 
           this._androidStatusBarOffset = (isTranslucent || isHidden) ? StatusBar.currentHeight : 0
         }
-        this._offset.setValue((this._additionalOffset + this._containerOffset - this._androidStatusBarOffset) * -1)
+
+        if (this.props.scrollingContainerOffset !== undefined) {
+          this._offset.setValue((this._additionalOffset + this._containerOffset - this.props.scrollingContainerOffset - this._androidStatusBarOffset) * -1)
+        } else {
+          this._offset.setValue((this._additionalOffset + this._containerOffset - this._androidStatusBarOffset) * -1)
+        }
+        //this._offset.setValue((this._additionalOffset +
+        // this._containerOffset - this._androidStatusBarOffset) * -1)
         return false
       },
       onMoveShouldSetPanResponder: (evt, gestureState) => {
@@ -301,29 +308,27 @@ class SortableFlatList extends Component {
   renderItem = ({ item, index }) => {
     const { renderItem, data, horizontal } = this.props
     const { activeRow, spacerIndex } = this.state
-    const isActiveRow = activeRow === index
     const isSpacerRow = spacerIndex === index
-    const isLastItem = index === data.length - 1
-    const spacerAfterLastItem = spacerIndex >= data.length
-    const activeRowSize = this._measurements[activeRow] ? this._measurements[activeRow][horizontal ? 'width' : 'height'] : 0
-    const endPadding = (isLastItem && spacerAfterLastItem)
-    const spacerStyle = { [horizontal ? 'width' : 'height']: activeRowSize }
+    const spacerSize = (isSpacerRow && this._measurements[activeRow]) ? this._measurements[activeRow][horizontal ? 'width' : 'height'] : 0
+    const endPadding = index === data.length - 1 && spacerIndex === data.length && this._measurements[activeRow][horizontal ? 'width' : 'height']
+    const isActiveRow = activeRow === index
 
     return (
       <View style={[styles.fullOpacity, { flexDirection: horizontal ? 'row' : 'column' }]} >
-        {isSpacerRow && <View style={spacerStyle} />}
+        {!!spacerSize && <View style={{ [horizontal ? 'width' : 'height']: spacerSize }} />}
         <RowItem
           horizontal={horizontal}
           index={index}
           isActiveRow={isActiveRow}
+          spacerSize={spacerSize}
           renderItem={renderItem}
           item={item}
           setRef={this.setRef}
           move={this.move}
           moveEnd={this.moveEnd}
+          endPadding={endPadding}
           extraData={this.state.extraData}
         />
-        {endPadding && <View style={spacerStyle} />}
       </View>
     )
   }
@@ -341,15 +346,12 @@ class SortableFlatList extends Component {
   }
 
   measureContainer = ref => {
-    if (ref && this._containerOffset === undefined) {
-      // setTimeout required or else dimensions reported as 0
-      setTimeout(() => {
-        const { horizontal } = this.props
-        ref.measure((x, y, width, height, pageX, pageY) => {
-          this._containerOffset = horizontal ? pageX : pageY
-          this._containerSize = horizontal ? width : height
-        })
-      }, 50)
+    if (this.containerView) {
+      const { horizontal } = this.props
+      this.containerView.measure((x, y, width, height, pageX, pageY) => {
+        this._containerOffset = horizontal ? pageX : pageY
+        this._containerSize = horizontal ? width : height
+      })
     }
   }
 
@@ -366,10 +368,8 @@ class SortableFlatList extends Component {
 
     return (
       <View
-        onLayout={e => {
-          // console.log('layout', e.nativeEvent)
-        }}
-        ref={this.measureContainer}
+ref={ref => {this.containerView = ref}}
+      onLayout={this.measureContainer}
         {...this._panResponder.panHandlers}
         style={styles.wrapper} // Setting { opacity: 1 } fixes Android measurement bug: https://github.com/facebook/react-native/issues/18034#issuecomment-368417691
       >
@@ -399,14 +399,15 @@ SortableFlatList.defaultProps = {
 
 class RowItem extends React.PureComponent {
 
+  renderSpacer = (size) => <View style={this.props.horizontal ? { width: size } : { height: size }} />
+
   move = () => {
     const { move, moveEnd, renderItem, item, index } = this.props
     const hoverComponent = renderItem({ isActive: true, item, index, move: () => null, moveEnd })
     move(hoverComponent, index)
   }
-
   render() {
-    const { moveEnd, isActiveRow, horizontal, renderItem, item, index, setRef } = this.props
+    const { moveEnd, isActiveRow, horizontal, endPadding, renderItem, item, index, setRef } = this.props
     const component = renderItem({
       isActive: false,
       item,
@@ -424,6 +425,7 @@ class RowItem extends React.PureComponent {
         <View style={wrapperStyle}>
           {component}
         </View>
+        {!!endPadding && this.renderSpacer(endPadding)}
       </View>
     )
   }
